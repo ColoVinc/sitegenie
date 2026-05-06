@@ -165,21 +165,6 @@ class Vcai_Tools {
                 ],
             ],
 
-            [
-                'name'        => 'create_user',
-                'description' => 'Crea un nuovo utente WordPress. Usalo quando l\'utente chiede di aggiungere un nuovo utente al sito.',
-                'parameters'  => [
-                    'type'       => 'object',
-                    'properties' => [
-                        'username' => [ 'type' => 'string', 'description' => 'Nome utente (login)' ],
-                        'email'    => [ 'type' => 'string', 'description' => 'Indirizzo email' ],
-                        'role'     => [ 'type' => 'string', 'description' => 'Ruolo: editor, author, contributor, subscriber. Default: subscriber' ],
-                        'name'     => [ 'type' => 'string', 'description' => 'Nome visualizzato (opzionale)' ],
-                    ],
-                    'required' => [ 'username', 'email' ],
-                ],
-            ],
-
             // ── IMPOSTAZIONI SITO ─────────────────────────────────────
             [
                 'name'        => 'update_site_settings',
@@ -232,22 +217,6 @@ class Vcai_Tools {
                         'content'    => [ 'type' => 'string',  'description' => 'Testo della risposta' ],
                     ],
                     'required' => [ 'comment_id', 'content' ],
-                ],
-            ],
-
-            // ── COMPONENTI ────────────────────────────────────────────
-            [
-                'name'        => 'create_component',
-                'description' => 'Crea un componente per un page builder (WPBakery, Elementor, ecc.). Fornisci slug, nome, editor e una descrizione dettagliata di cosa deve fare il componente. Il codice verrà generato automaticamente.',
-                'parameters'  => [
-                    'type'       => 'object',
-                    'properties' => [
-                        'slug'        => [ 'type' => 'string', 'description' => 'Slug del componente (es. sg-hero-section). Deve iniziare con sg-' ],
-                        'name'        => [ 'type' => 'string', 'description' => 'Nome leggibile del componente (es. Hero Section)' ],
-                        'editor'      => [ 'type' => 'string', 'description' => 'Editor: wpbakery, elementor, gutenberg, divi' ],
-                        'description' => [ 'type' => 'string', 'description' => 'Descrizione dettagliata del componente: cosa mostra, quali campi ha, come appare' ],
-                    ],
-                    'required' => [ 'slug', 'name', 'editor', 'description' ],
                 ],
             ],
 
@@ -345,13 +314,11 @@ class Vcai_Tools {
             case 'reply_comment':         return self::reply_comment( $args );
             case 'update_site_settings':  return self::update_site_settings( $args );
             case 'get_users':             return self::tool_get_users( $args );
-            case 'create_user':           return self::tool_create_user( $args );
             case 'get_products':          return self::tool_get_products( $args );
             case 'create_product':        return self::tool_create_product( $args );
             case 'get_orders':            return self::tool_get_orders( $args );
             case 'get_menus':             return self::tool_get_menus();
             case 'add_menu_item':         return self::tool_add_menu_item( $args );
-            case 'create_component':      return self::tool_create_component( $args );
             default:
                 return [ 'error' => "Tool \"$name\" non riconosciuto." ];
         }
@@ -916,39 +883,6 @@ class Vcai_Tools {
         return [ 'success' => true, 'count' => count( $result ), 'users' => $result ];
     }
 
-    private static function tool_create_user( array $args ): array {
-        $username = sanitize_user( $args['username'] ?? '' );
-        $email    = sanitize_email( $args['email'] ?? '' );
-        $role     = sanitize_text_field( $args['role'] ?? 'subscriber' );
-
-        // Non permettere la creazione di administrator via chat
-        if ( $role === 'administrator' ) {
-            return [ 'error' => 'Non è possibile creare utenti administrator dalla chat per motivi di sicurezza.' ];
-        }
-
-        $allowed_roles = [ 'editor', 'author', 'contributor', 'subscriber' ];
-        if ( ! in_array( $role, $allowed_roles, true ) ) $role = 'subscriber';
-
-        $password = wp_generate_password( 16 );
-        $user_id  = wp_insert_user( [
-            'user_login'   => $username,
-            'user_email'   => $email,
-            'user_pass'    => $password,
-            'display_name' => sanitize_text_field( $args['name'] ?? $username ),
-            'role'         => $role,
-        ] );
-
-        if ( is_wp_error( $user_id ) ) {
-            return [ 'error' => $user_id->get_error_message() ];
-        }
-
-        return [
-            'success' => true,
-            'user_id' => $user_id,
-            'message' => "Utente \"$username\" creato con ruolo \"$role\" (ID: $user_id). Password generata automaticamente.",
-        ];
-    }
-
     // ─────────────────────────────────────────────────────────────────
     // WOOCOMMERCE
     // ─────────────────────────────────────────────────────────────────
@@ -1110,92 +1044,4 @@ class Vcai_Tools {
         ];
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // COMPONENTI
-    // ─────────────────────────────────────────────────────────────────
-
-    private static function tool_create_component( array $args ): array {
-        $slug        = sanitize_file_name( $args['slug'] ?? '' );
-        $name        = sanitize_text_field( $args['name'] ?? '' );
-        $editor      = sanitize_text_field( $args['editor'] ?? '' );
-        $description = $args['description'] ?? '';
-
-        if ( empty( $slug ) || empty( $name ) || empty( $description ) ) {
-            return [ 'error' => 'Slug, nome e descrizione sono obbligatori.' ];
-        }
-
-        $allowed_editors = [ 'wpbakery', 'elementor', 'gutenberg', 'divi' ];
-        if ( ! in_array( $editor, $allowed_editors, true ) ) {
-            return [ 'error' => "Editor \"$editor\" non supportato." ];
-        }
-
-        // Recupera la documentazione dell'editor dalla knowledge base
-        $kb_docs = Vcai_Knowledge::search( "Regole moduli $editor widget", 3000 );
-
-        // Genera il codice con una chiamata API dedicata (senza tool calling)
-        $connector = Vcai_Admin::get_connector();
-        if ( ! $connector ) return [ 'error' => 'Connettore AI non disponibile.' ];
-
-        $prompt  = "Genera il codice completo per un componente $editor per WordPress.\n\n";
-        $prompt .= "Nome componente: $name\n";
-        $prompt .= "Slug: $slug\n";
-        $prompt .= "Descrizione: $description\n\n";
-        if ( $kb_docs ) {
-            $prompt .= "DOCUMENTAZIONE DI RIFERIMENTO — DEVI seguire ESATTAMENTE questa struttura:\n$kb_docs\n\n";
-        }
-        $prompt .= "REGOLE OBBLIGATORIE:\n";
-        $prompt .= "1. Genera SOLO codice, nessun testo di spiegazione, nessun commento fuori dal codice\n";
-        $prompt .= "2. Separa i file con questi marcatori esatti su riga singola: ===PHP=== ===CSS=== ===JS===\n";
-        $prompt .= "3. DEVI generare un componente per $editor — NON usare API di altri editor\n";
-        if ( $editor === 'elementor' ) {
-            $prompt .= "4. Il widget DEVE estendere \\Elementor\\Widget_Base con i metodi get_name(), get_title(), get_icon(), get_categories(), register_controls(), render()\n";
-            $prompt .= "5. Registra il widget con add_action('elementor/widgets/register', ...)\n";
-            $prompt .= "6. Registra la categoria 'vcai-components' con add_action('elementor/elements/categories_registered', ...)\n";
-            $prompt .= "7. NON usare vc_map, add_shortcode o qualsiasi funzione di WPBakery\n";
-        } elseif ( $editor === 'wpbakery' ) {
-            $prompt .= "4. Il PHP DEVE seguire la struttura della documentazione: classe con costruttore, add_shortcode, add_action vc_before_init, funzione map con vc_map, funzione render HTML\n";
-            $prompt .= "5. Il PHP deve iniziare con il check if (!class_exists('WPBakeryShortCodesContainer')) return;\n";
-            $prompt .= "6. NON usare \\Elementor\\Widget_Base o qualsiasi classe di Elementor\n";
-        }
-        $prompt .= "8. La categoria nel page builder deve essere 'VColonna AI components' (WPBakery) o 'vcai-components' (Elementor)\n";
-        $prompt .= "9. Gli asset CSS/JS vanno registrati con wp_register_style/wp_register_script e caricati nel render con wp_enqueue_style/wp_enqueue_script\n";
-        $prompt .= "10. Il percorso degli asset è: plugins_url('assets/css/$slug.css', __FILE__) e plugins_url('assets/js/$slug.js', __FILE__)\n";
-        $prompt .= "11. NON mischiare CSS o JS dentro il file PHP — vanno nei file separati dopo i marcatori ===CSS=== e ===JS===\n";
-
-        $response = $connector->generate( $prompt, [ 'max_tokens' => 4000, 'temperature' => 0.2 ] );
-        if ( ! $response['success'] ) {
-            return [ 'error' => 'Errore nella generazione del codice: ' . $response['error'] ];
-        }
-
-        // Parsa il codice generato
-        $generated = $response['text'];
-
-        // Rimuovi markdown code blocks
-        $generated = preg_replace( '/```\w*\n?/', '', $generated );
-
-        $php_code = '';
-        $css_code = '';
-        $js_code  = '';
-
-        if ( strpos( $generated, '===PHP===' ) !== false ) {
-            // Formato con marcatori
-            $parts = preg_split( '/===(?:PHP|CSS|JS)===/', $generated );
-            $php_code = trim( $parts[1] ?? '' );
-            $css_code = trim( $parts[2] ?? '' );
-            $js_code  = trim( $parts[3] ?? '' );
-        } else {
-            // Tutto è PHP
-            $php_code = trim( $generated );
-        }
-
-        if ( empty( $php_code ) ) {
-            return [ 'error' => 'Il codice PHP generato è vuoto.' ];
-        }
-
-        if ( strpos( trim( $php_code ), '<?php' ) !== 0 ) {
-            $php_code = "<?php\n" . $php_code;
-        }
-
-        return Vcai_Components::create( $slug, $name, $editor, $php_code, $css_code, $js_code );
-    }
 }
