@@ -62,52 +62,6 @@ jQuery(function ($) {
     });
 
 
-    // ── Componenti ────────────────────────────────────────────
-
-    // Toggle stato componente
-    $(document).on('click', '.vcai-comp-toggle', function () {
-        var $btn = $(this);
-        $.post(vcai.ajax_url, {
-            action: 'vcai_toggle_component',
-            nonce: vcai.nonce,
-            slug: $btn.data('slug'),
-            status: $btn.data('status'),
-        }).done(function (res) {
-            if (res.success) location.reload();
-            else alert(res.data);
-        });
-    });
-
-    // Elimina componente
-    $(document).on('click', '.vcai-comp-delete', function () {
-        if (!confirm('Eliminare questo componente? I file verranno rimossi.')) return;
-        $.post(vcai.ajax_url, {
-            action: 'vcai_delete_component',
-            nonce: vcai.nonce,
-            slug: $(this).data('slug'),
-        }).done(function (res) {
-            if (res.success) location.reload();
-            else alert(res.data);
-        });
-    });
-
-    // Disattiva tutti
-    $('#vcai-deactivate-all').on('click', function () {
-        if (!confirm('Disattivare tutti i componenti?')) return;
-        $.post(vcai.ajax_url, {
-            action: 'vcai_toggle_component',
-            nonce: vcai.nonce,
-            slug: '__all__',
-            status: 'inactive',
-        }).done(function () { location.reload(); });
-    });
-
-    // Mostra errore componente
-    $(document).on('click', '.vcai-comp-error', function () {
-        var msg = $(this).data('error') || 'Errore sconosciuto';
-        alert('Errore componente:\n\n' + msg);
-    });
-
     // Mostra dettaglio errore nei log
     $(document).on('click', '.vcai-log-error', function () {
         var msg = $(this).data('error') || 'Errore sconosciuto';
