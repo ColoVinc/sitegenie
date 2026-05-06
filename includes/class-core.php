@@ -29,9 +29,6 @@ class Vcai_Core {
             Vcai_Metabox::get_instance();
             Vcai_Chat::get_instance();
         }
-
-        // Carica componenti attivi (frontend + backend)
-        Vcai_Components::load_active();
     }
 
     public function run_cleanup() {
